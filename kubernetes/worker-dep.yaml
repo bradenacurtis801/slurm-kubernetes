@@ -17,8 +17,8 @@ spec:
     spec:
       containers:
       - name: worker-client
-        image: bradenacurtis801/slurm:oompi-nccl_v2.0.0_cuda12.2-cudnn8-ubuntu20.04-sm86
-        command: ["/bin/sh", "-c", "sleep infinity"]
+        image: bradenacurtis801/slurm@sha256:e43831cd414f91336de7ccaa5b99e039823130cb5738224716e9304601b8d823 
+        # command: ["/bin/sh", "-c", "sleep infinity"]
         volumeMounts:
         - name: munge-key-volume
           mountPath: /tmp/munge/munge.key
@@ -27,6 +27,8 @@ spec:
         env:
         - name: SLURM_ROLE
           value: worker
+        - name: CONFIG_SERVER_URL
+          value: "ws://10.10.223.0:3000/ws/notify"
       restartPolicy: Always
       volumes:
       - name: munge-key-volume

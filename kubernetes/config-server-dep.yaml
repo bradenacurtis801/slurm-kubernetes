@@ -4,7 +4,21 @@ metadata:
   name: config-server-svc
   namespace: test-slurm
 spec:
-  clusterIP: None
+  type: ClusterIP
+  selector:
+    app: config-server
+  ports:
+  - name: config
+    port: 3000
+    targetPort: 3000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: config-server-lb
+  namespace: test-slurm
+spec:
+  type: LoadBalancer
   selector:
     app: config-server
   ports:
@@ -13,12 +27,11 @@ spec:
     targetPort: 3000
 ---
 apiVersion: apps/v1
-kind: StatefulSet
+kind: Deployment
 metadata:
   name: config-server
   namespace: test-slurm
 spec:
-  serviceName: "config-server-svc"
   replicas: 1  # Number of replicas, adjust as needed
   selector:
     matchLabels:
@@ -32,15 +45,8 @@ spec:
       serviceAccountName: slurm-config-sa
       containers:
       - name: config-server
-        image:  bradenacurtis801/slurm-kubernetes-config-server:v1.0.0
+        image: bradenacurtis801/slurm:config-server_v1.2.0
+        ports:
+        - containerPort: 3000
         # command: ["/bin/sh", "-c", "sleep infinity"]
-  # volumeClaimTemplates:  # This section is optional if persistent storage is needed
-  # - metadata:
-  #     name: config-server-data
-  #   spec:
-  #     accessModes: [ "ReadWriteOnce" ]
-  #     resources:
-  #       requests:
-  #         storage: 1Gi
 
-  # config-server-0.config-server-svc.test-slurm.svc.cluster.local

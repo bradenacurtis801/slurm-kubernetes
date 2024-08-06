@@ -4,12 +4,11 @@ import asyncio
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from routes import api
-from sockets.config_server import ConfigServer
+from sockets.config_server import config_server
 from utils.logger import setup_logger
 
 logger = setup_logger()
 
-config_server = ConfigServer()
 app = FastAPI()
 app.include_router(api.router)
 

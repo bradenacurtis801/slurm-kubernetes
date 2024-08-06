@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
-from main import config_server
+from sockets.config_server import config_server
 
 router = APIRouter(tags=["Config API"])
 

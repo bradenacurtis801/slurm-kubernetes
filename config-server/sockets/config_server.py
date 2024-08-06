@@ -113,3 +113,7 @@ class ConfigServer:
                 logger.info(f"updated node: {websocket.client.host}")
             except Exception as e:
                 logging.error(f"Failed to notify client: {e}")
+
+
+config_server = ConfigServer()
+

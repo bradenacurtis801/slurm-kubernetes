@@ -56,6 +56,8 @@ spec:
         env:
         - name: SLURM_ROLE
           value: master
+        - name: CONFIG_SERVER_URL
+          value: "ws://10.10.223.0:3000/ws/notify"
       volumes:
       - name: munge-key-volume
         secret:
