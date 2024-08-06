@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker-client
+  namespace: test-slurm
+  labels:
+    app: worker-client
+spec:
+  replicas: 1  # Number of replicas, adjust as needed
+  selector:
+    matchLabels:
+      app: worker-client
+  template:
+    metadata:
+      labels:
+        app: worker-client
+    spec:
+      containers:
+      - name: worker-client
+        image: bradenacurtis801/slurm:oompi-nccl_v2.0.0_cuda12.2-cudnn8-ubuntu20.04-sm86
+        command: ["/bin/sh", "-c", "sleep infinity"]
+        volumeMounts:
+        - name: munge-key-volume
+          mountPath: /tmp/munge/munge.key
+          subPath: munge.key
+          readOnly: true
+        env:
+        - name: SLURM_ROLE
+          value: worker
+      restartPolicy: Always
+      volumes:
+      - name: munge-key-volume
+        secret:
+          secretName: munge-key

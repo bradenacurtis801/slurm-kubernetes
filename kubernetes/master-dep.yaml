@@ -1,0 +1,75 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: master-client-svc
+  namespace: test-slurm
+spec:
+  clusterIP: None
+  selector:
+    app: master-client
+  ports:
+  - name: slurm
+    port: 6817
+    targetPort: 6817
+  - name: slurmd
+    port: 6818
+    targetPort: 6818
+  - name: slurmdbd
+    port: 6819
+    targetPort: 6819
+  - name: mysql
+    port: 3306
+    targetPort: 3306
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: master-client
+  namespace: test-slurm
+spec:
+  serviceName: "master-client-svc"
+  replicas: 1  # Number of replicas
+  selector:
+    matchLabels:
+      app: master-client
+  template:
+    metadata:
+      labels:
+        app: master-client
+    spec:
+      setHostnameAsFQDN: true
+      serviceAccountName: slurm-config-sa
+      containers:
+      - name: master-client
+        image: bradenacurtis801/slurm:oompi-nccl_v2.0.0_cuda12.2-cudnn8-ubuntu20.04-sm86
+        # command: ["/bin/sh", "-c", "sleep infinity"]
+        volumeMounts:
+        - name: munge-key-volume
+          mountPath: /tmp/munge/munge.key
+          subPath: munge.key
+          readOnly: true
+        ports:
+        - containerPort: 6817
+        - containerPort: 6818
+        - containerPort: 6819
+        - containerPort: 3306
+        env:
+        - name: SLURM_ROLE
+          value: master
+      volumes:
+      - name: munge-key-volume
+        secret:
+          secretName: munge-key
+      
+  # volumeClaimTemplates:  # This section is optional if persistent storage is needed
+  # - metadata:
+  #     name: master-client-data
+  #   spec:
+  #     accessModes: [ "ReadWriteOnce" ]
+  #     resources:
+  #       requests:
+  #         storage: 1Gi
+
+
+
+# master-client-0.master-client-svc.test-slurm.svc.cluster.local
