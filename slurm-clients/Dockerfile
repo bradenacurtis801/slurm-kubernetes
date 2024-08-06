@@ -82,8 +82,8 @@ RUN echo 'OPTIONS="--force --key-file /etc/munge/munge.key"' > /etc/default/mung
 # Copy entrypoint script
 COPY docker-entrypoint.sh /
 
-COPY master_client.py /App/master/main.py
-COPY worker_client.py /App/worker/main.py
+COPY ./master /App/master/
+COPY ./worker /App/worker/
 
 # Copy requirements.txt and install dependencies
 COPY requirements.txt /App/requirements.txt
