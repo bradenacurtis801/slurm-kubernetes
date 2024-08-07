@@ -17,3 +17,9 @@ def get_client(client_id: str):
         return JSONResponse(content=metadata)
     else:
         return JSONResponse(status_code=404, content={"message": "Client not found"})
+
+@router.get("/slurm_conf")
+def get_client(client_id: str):
+    return JSONResponse(
+    content={"slurm_conf": config_server.slurm_config.generate_conf()}
+    )
