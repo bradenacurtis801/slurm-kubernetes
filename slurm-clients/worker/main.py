@@ -6,6 +6,10 @@ import subprocess
 import json
 
 CONFIG_SERVER_URL = os.getenv("CONFIG_SERVER_URL", "ws://config-server-0.config-server-svc.test-slurm.svc.cluster.local:3000/ws/notify")
+PHYSICAL_NODE_HOSTNAME = os.getenv("NODE_NAME", None)
+PHYSICAL_NODE_IP = os.getenv("NODE_IP", None)
+SLURM_CONF_DIR = os.getenv("SLURM_CONF_DIR", "/etc/slurm-llnl")
+LOG_DIR = os.getenv("LOG_DIR", "/var/log/slurm-llnl")
 
 # Set up logging
 logging.basicConfig(
@@ -18,12 +22,19 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Global variable to store the running verify_and_restart_node task
+running_task = None
+
 async def register_worker():
     async with websockets.connect(CONFIG_SERVER_URL) as websocket:
         node_details = get_worker_details()
         data = {
             "command": "register_worker",
-            "data": node_details
+            "data": {
+                **node_details,  # Unpack node_details dictionary
+                "machine_hostname": PHYSICAL_NODE_HOSTNAME,
+                "machine_ip": PHYSICAL_NODE_IP
+                }
         }
         logger.info(f"Registering worker: {data}")
         await websocket.send(json.dumps(data))
@@ -39,14 +50,15 @@ def get_worker_details():
     gpus = 0
     if os.getenv("USE_GPU") == "true" and os.system("command -v nvidia-smi") == 0:
         gpus = int(os.popen("nvidia-smi --query-gpu=index --format=csv,noheader | wc -l").read().strip())
+        generate_gres_conf()
     return {
-        "node_name": node_name,
-        "ip_address": ip_address,
-        "sockets": sockets,
-        "cores_per_socket": cores_per_socket,
-        "threads_per_core": threads_per_core,
-        "real_memory": real_memory,
-        "gpus": gpus
+        "pod_hostname": node_name,
+        "pod_ip_address": ip_address,
+        "pod_sockets": sockets,
+        "pod_cores_per_socket": cores_per_socket,
+        "pod_threads_per_core": threads_per_core,
+        "pod_real_memory": real_memory,
+        "pod_gpus": gpus
     }
 
 async def receive_configs(websocket):
@@ -60,17 +72,8 @@ async def receive_configs(websocket):
             logger.info(f"Received data: {data}")
 
             if command == "start_node":
-                ## responsible for the following:
-                ## 1. update munge.key
-                ## 2. update slurm.conf
-                ## 3. start munge
-                ## 4. if munge running, then start slurmctld
-                ## 5. if munge not running, then send status_code to config-server
                 await handle_start_node(data, websocket)
             elif command == "update_node":
-                ## responsible for the following:
-                ## 1. update slurm.conf
-                ## 2. restart slurmctld
                 await update_node(data, websocket)
             elif command == "stop_node":
                 pass
@@ -89,12 +92,35 @@ async def handle_start_node(data, websocket):
 
 async def update_slurm_config(data):
     logger.info("Updating Slurm configuration")
-    slurm_conf_path = "/etc/slurm-llnl/slurm.conf"
+    slurm_conf_path = f"{SLURM_CONF_DIR}/slurm.conf"
     with open(slurm_conf_path, "w") as f:
         f.write(data)
     logger.info(f"Updated slurm.conf with: {data}")
+
+def generate_gres_conf():
+    gres_conf_path = os.path.join(SLURM_CONF_DIR, "gres.conf")
     
+    # Initialize gres file
+    with open(gres_conf_path, 'w') as gres_file:
+        pass
+
+    logger.info(f"Generating {gres_conf_path}")
+
+    gpu_index = 0  # Start with the first GPU index
+    gpu_devices = sorted([dev for dev in os.listdir('/dev') if dev.startswith('nvidia') and dev[6:].isdigit()])
     
+    with open(gres_conf_path, 'a') as gres_file:
+        for gpu_device in gpu_devices:
+            gpu_name = subprocess.getoutput(f"nvidia-smi --query-gpu=name --format=csv,noheader --id={gpu_index}")
+            gpu_name = gpu_name.strip().replace(" ", "_")
+            if gpu_name != "No_devices_were_found":
+                gres_file.write(f"Name=gpu Type={gpu_name} File=/dev/{gpu_device}\n")
+            gpu_index += 1  # Increment the GPU index for the next device
+
+    logger.info(f"{gres_conf_path} generated:")
+    with open(gres_conf_path, 'r') as gres_file:
+        logger.info(gres_file.read())
+
 async def start_slurmd():
     await start_service("slurmd")
     return status_service("slurmd")
@@ -104,15 +130,28 @@ async def restart_slurmd():
     return status_service("slurmd")
 
 async def update_node(data, websocket):
+    global running_task
+
     node_name = os.popen("hostname").read().strip()
     await update_slurm_config(data["slurm_conf"])
-    await verify_and_restart_node(node_name, websocket)
+
+    if running_task is not None:
+        running_task.cancel()
+        try:
+            await running_task
+        except asyncio.CancelledError:
+            logger.info(f"Previous verify_and_restart_node task cancelled.")
+
+    running_task = asyncio.create_task(verify_and_restart_node(node_name, websocket))
 
 async def verify_and_restart_node(node_name, websocket):
+
     undesirable_states = [
         "DOWN", "FAIL", "NO_RESPOND", "POWER_DOWN", "UNKNOWN"
     ]
+
     retries = 5
+
     for i in range(retries):
         result = subprocess.run(["scontrol", "show", "node", node_name], capture_output=True)
         output = result.stdout.decode()
@@ -126,10 +165,15 @@ async def verify_and_restart_node(node_name, websocket):
             await asyncio.sleep(5)  # Wait before retrying
             continue
 
+        if f"Node {node_name} not found" in output:
+            logger.error(f"Node {node_name} not found, registering worker")
+            await register_worker()
+            return
+
         state = None
         for line in output.split('\n'):
             if 'State=' in line:
-                state = line.split('State=')[1].split()[0]
+                state = line.split('State=')[1].split()[0].strip('*')
                 break
 
         if state == "IDLE":
@@ -146,7 +190,7 @@ async def verify_and_restart_node(node_name, websocket):
                 output = result.stdout.decode()
                 for line in output.split('\n'):
                     if 'State=' in line:
-                        state = line.split('State=')[1].split()[0]
+                        state = line.split('State=')[1].split()[0].strip('*')
                         break
                 if state == "IDLE":
                     logger.info(f"Node {node_name} is idle after restart")
@@ -158,10 +202,10 @@ async def verify_and_restart_node(node_name, websocket):
             logger.info(f"Node {node_name} is in state {state}, no restart needed")
             await websocket.send(json.dumps({"command": "node_status", "data": {"code": state.lower(), "message": f"Node {node_name} is in state {state}"}}))
             return  # Exit the function immediately
+
     else:
         logger.error(f"Node {node_name} status is still unknown after retries")
         await websocket.send(json.dumps({"command": "node_status", "data": {"code": "unknown", "message": f"Node {node_name} status is unknown after retries"}}))
-
 
 def handle_scontrol_errors(errors):
     if "munge" in errors:
@@ -172,9 +216,8 @@ def handle_scontrol_errors(errors):
     # Add any other specific error handling as needed
 
 async def start_service(service_name, *args):
-    log_dir = "/var/log/slurm-llnl"
-    stdout_log = os.path.join(log_dir, f"{service_name}_stdout.log")
-    stderr_log = os.path.join(log_dir, f"{service_name}_stderr.log")
+    stdout_log = os.path.join(LOG_DIR, f"{service_name}_stdout.log")
+    stderr_log = os.path.join(LOG_DIR, f"{service_name}_stderr.log")
     logger.info(f"Starting {service_name} service...")
     try:
         with open(stdout_log, 'wb') as out, open(stderr_log, 'wb') as err:
@@ -189,9 +232,8 @@ async def start_service(service_name, *args):
         logger.error(f"Failed to start {service_name}: {e}")
 
 async def restart_service(service_name):
-    log_dir = "/var/log/slurm-llnl"
-    stdout_log = os.path.join(log_dir, f"{service_name}_stdout.log")
-    stderr_log = os.path.join(log_dir, f"{service_name}_stderr.log")
+    stdout_log = os.path.join(LOG_DIR, f"{service_name}_stdout.log")
+    stderr_log = os.path.join(LOG_DIR, f"{service_name}_stderr.log")
     logger.info(f"Restarting {service_name} service...")
     try:
         with open(stdout_log, 'wb') as out, open(stderr_log, 'wb') as err:
