@@ -23,16 +23,16 @@ class ConfigServer:
 
     async def on_connect(self, websocket: WebSocket):
         await websocket.accept()
-        hostname = websocket.client.host
         self.client_sockets.add_client(websocket)
-        logging.info(f"Client connected: {hostname}")
+        logging.info(f"Client connected: {websocket.client.host}")
 
     async def on_disconnect(self, websocket: WebSocket):
         logging.info(f"Client disconnected: {websocket.client.host}")
         client_socket = self.client_sockets.get_client(websocket)
-        if client_socket and client_socket.get_name():
-            logger.info(f"Removing node from slurm config: {client_socket.get_name()}")
-            self.slurm_config.remove_node(client_socket.get_name())
+        pod_name = client_socket.get_pod_name()
+        if client_socket and pod_name:
+            logger.info(f"Removing node from slurm config: {pod_name}")
+            self.slurm_config.remove_node(pod_name)
             await self.broadcast_update_nodes()
         logger.info(f"Removing client socket: {websocket}")
         self.client_sockets.remove_client(websocket)
@@ -60,31 +60,56 @@ class ConfigServer:
             pass
 
     async def register_master(self, websocket: WebSocket, data: dict):
-        hostname = data.get("hostname")
+        hostname = data["pod_hostname"]
+        pod_node_info = {
+            "pod_hostname": data["pod_hostname"],
+            "role": "master"
+        }
+        machine_info = {
+            "machine_hostname": data["machine_hostname"],
+            "machine_ip": data["machine_ip"]
+        }
         self.slurm_config.slurmctld_host = hostname
         logger.info(f"Updating slurm.conf with hostname: {hostname}")
-        self.client_sockets.get_client(websocket).set_name(hostname)
+
+        # Update the websocket metadata
+        self.client_sockets.update_client_meta(
+            websocket, "node_compute_info", pod_node_info
+        )
+        self.client_sockets.update_client_meta(
+            websocket, "machine_info", machine_info
+        )
+
+        self.client_sockets.get_client(websocket).set_name(data.get("hostname"))
         await self.start_node(websocket)
         await self.broadcast_update_nodes()
 
     async def register_worker(self, websocket: WebSocket, data: dict):
-        node_info = {
-            "node_name": data["node_name"],
-            "node_addr": data["ip_address"],
-            "sockets": data["sockets"],
-            "cores_per_socket": data["cores_per_socket"],
-            "threads_per_core": data["threads_per_core"],
-            "real_memory": data["real_memory"],
-            "gres": f"gpu:{data['gpus']}",
+        pod_node_info = {
+            "node_name": data["pod_hostname"],
+            "node_addr": data["pod_ip_address"],
+            "sockets": data["pod_sockets"],
+            "cores_per_socket": data["pod_cores_per_socket"],
+            "threads_per_core": data["pod_threads_per_core"],
+            "real_memory": data["pod_real_memory"],
+            "gres": f"gpu:{data['pod_gpus']}",
+        }
+        machine_info = {
+            "machine_hostname": data["machine_hostname"],
+            "machine_ip": data["machine_ip"]
         }
 
-        self.slurm_config.add_node(**node_info)
+        self.slurm_config.add_node(**pod_node_info)
 
         # Update the websocket metadata
         self.client_sockets.update_client_meta(
-            websocket, "node_compute_info", node_info
+            websocket, "pod_compute_info", pod_node_info
         )
-        self.client_sockets.get_client(websocket).set_name(data["node_name"])
+        self.client_sockets.update_client_meta(
+            websocket, "machine_info", machine_info
+        )
+        self.client_sockets.get_client(websocket).set_name(data["machine_hostname"])
+        self.client_sockets.get_client(websocket).set_pod_name(data["pod_hostname"])
 
         await self.start_node(websocket)
         await self.broadcast_update_nodes()
