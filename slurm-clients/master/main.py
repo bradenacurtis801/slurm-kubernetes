@@ -6,6 +6,8 @@ import subprocess
 import json
 
 CONFIG_SERVER_URL = os.getenv("CONFIG_SERVER_URL", "ws://config-server-0.config-server-svc.test-slurm.svc.cluster.local:3000/ws/notify")
+PHYSICAL_NODE_HOSTNAME = os.getenv("NODE_NAME", None)
+PHYSICAL_NODE_IP = os.getenv("NODE_IP", None)
 
 # Set up logging
 logging.basicConfig(
@@ -23,7 +25,11 @@ async def register_master():
         node_details = get_master_details()
         data = {
             "command": "register_master",
-            "data": {"hostname": node_details}
+            "data": {
+                "pod_hostname": node_details,
+                "machine_hostname": PHYSICAL_NODE_HOSTNAME,
+                "machine_ip": PHYSICAL_NODE_IP
+                }
         }
         logger.info(f"Registering master: {data}")
         await websocket.send(json.dumps(data))
@@ -77,7 +83,7 @@ async def handle_start_node(data, websocket):
     
     slurmctld_running = await start_slurmctld()
 
-async def update_node(data):
+async def update_node(data, websocket):
     await update_slurm_config(data["slurm_conf"])
     status = await restart_slurmctld()
         
