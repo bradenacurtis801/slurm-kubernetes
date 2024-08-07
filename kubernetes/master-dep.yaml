@@ -41,7 +41,7 @@ spec:
       serviceAccountName: slurm-config-sa
       containers:
       - name: master-client
-        image: bradenacurtis801/slurm:oompi-nccl_v2.0.0_cuda12.2-cudnn8-ubuntu20.04-sm86
+        image: bradenacurtis801/slurm@sha256:794a1d5faa9a9b21e580a644e3fdbe36345951e3e761573b59fc386883912f82
         # command: ["/bin/sh", "-c", "sleep infinity"]
         volumeMounts:
         - name: munge-key-volume
@@ -58,6 +58,14 @@ spec:
           value: master
         - name: CONFIG_SERVER_URL
           value: "ws://10.10.223.0:3000/ws/notify"
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: NODE_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
       volumes:
       - name: munge-key-volume
         secret:

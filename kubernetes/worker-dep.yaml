@@ -15,20 +15,36 @@ spec:
       labels:
         app: worker-client
     spec:
+      runtimeClassName: nvidia
       containers:
       - name: worker-client
-        image: bradenacurtis801/slurm@sha256:e43831cd414f91336de7ccaa5b99e039823130cb5738224716e9304601b8d823 
+        image: bradenacurtis801/slurm@sha256:1a95b356bd94e4c3d671797676254a1d62977f8d95d5cb8140e51ecc89e2a47a
         # command: ["/bin/sh", "-c", "sleep infinity"]
         volumeMounts:
         - name: munge-key-volume
           mountPath: /tmp/munge/munge.key
           subPath: munge.key
           readOnly: true
+        resources:
+          requests:
+            nvidia.com/gpu: 2  # Requesting 2 GPUs
+          limits:
+            nvidia.com/gpu: 2  # Limiting to 2 GPUs
         env:
         - name: SLURM_ROLE
           value: worker
         - name: CONFIG_SERVER_URL
           value: "ws://10.10.223.0:3000/ws/notify"
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: NODE_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
+        - name: USE_GPU
+          value: "true"
       restartPolicy: Always
       volumes:
       - name: munge-key-volume
