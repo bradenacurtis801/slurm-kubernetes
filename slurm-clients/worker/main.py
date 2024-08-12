@@ -10,6 +10,15 @@ PHYSICAL_NODE_HOSTNAME = os.getenv("NODE_NAME", None)
 PHYSICAL_NODE_IP = os.getenv("NODE_IP", None)
 SLURM_CONF_DIR = os.getenv("SLURM_CONF_DIR", "/etc/slurm-llnl")
 LOG_DIR = os.getenv("LOG_DIR", "/var/log/slurm-llnl")
+USE_GPU = os.getenv("USE_GPU", 'false')
+
+POD_NODE_NAME = os.popen("hostname").read().strip()
+POD_IP_ADDRESS = os.popen('hostname -i').read().strip()
+POD_SOCKETS = int(os.popen("lscpu | grep 'Socket(s):' | awk '{print $2}'").read().strip())
+POD_CORES_PER_SOCKET = int(os.popen("lscpu | grep 'Core(s) per socket:' | awk '{print $4}'").read().strip())
+POD_THREADS_PER_CORE = int(os.popen("lscpu | grep 'Thread(s) per core:' | awk '{print $4}'").read().strip())
+POD_REAL_MEMORY = int(os.popen("free -m | awk '/^Mem:/{print $2}'").read().strip())
+POD_GPUS = 0 # IF USE_GPU ENV VAR IS TRUE, THEN THIS VALUE WILL BE OVERWRITTEN 
 
 # Set up logging
 logging.basicConfig(
@@ -41,24 +50,18 @@ async def register_worker():
         await receive_configs(websocket)
 
 def get_worker_details():
-    node_name = os.popen("hostname").read().strip()
-    ip_address = os.popen('hostname -i').read().strip()
-    sockets = int(os.popen("lscpu | grep 'Socket(s):' | awk '{print $2}'").read().strip())
-    cores_per_socket = int(os.popen("lscpu | grep 'Core(s) per socket:' | awk '{print $4}'").read().strip())
-    threads_per_core = int(os.popen("lscpu | grep 'Thread(s) per core:' | awk '{print $4}'").read().strip())
-    real_memory = int(os.popen("free -m | awk '/^Mem:/{print $2}'").read().strip())
-    gpus = 0
-    if os.getenv("USE_GPU") == "true" and os.system("command -v nvidia-smi") == 0:
-        gpus = int(os.popen("nvidia-smi --query-gpu=index --format=csv,noheader | wc -l").read().strip())
+    if USE_GPU == "true" and os.system("command -v nvidia-smi") == 0:
+        logger.info("USE_GPU set to true, configuring GRES info...")
+        GPUS = int(os.popen("nvidia-smi --query-gpu=index --format=csv,noheader | wc -l").read().strip())
         generate_gres_conf()
     return {
-        "pod_hostname": node_name,
-        "pod_ip_address": ip_address,
-        "pod_sockets": sockets,
-        "pod_cores_per_socket": cores_per_socket,
-        "pod_threads_per_core": threads_per_core,
-        "pod_real_memory": real_memory,
-        "pod_gpus": gpus
+        "pod_hostname": POD_NODE_NAME,
+        "pod_ip_address": POD_IP_ADDRESS,
+        "pod_sockets": POD_SOCKETS,
+        "pod_cores_per_socket": POD_CORES_PER_SOCKET,
+        "pod_threads_per_core": POD_THREADS_PER_CORE,
+        "pod_real_memory": POD_REAL_MEMORY,
+        "pod_gpus": POD_GPUS
     }
 
 async def receive_configs(websocket):
@@ -71,25 +74,18 @@ async def receive_configs(websocket):
             logger.info(f"Received command: {command}")
             logger.info(f"Received data: {data}")
 
-            if command == "start_node":
-                await handle_start_node(data, websocket)
-            elif command == "update_node":
+            if command == "update_node":
                 await update_node(data, websocket)
             elif command == "stop_node":
                 pass
+            else:
+                logger.warning(f"Unexpected command: {message}")
+
         except websockets.ConnectionClosed:
             logger.error("Connection closed, reconnecting...")
             await asyncio.sleep(5)
             await register_worker()
             
-async def handle_start_node(data, websocket):
-    logger.debug(f"handle_start_node: {data}")
-    await update_slurm_config(data["slurm_conf"])
-
-    slurmctld_running = await start_slurmd()
-    if not slurmctld_running:
-        await websocket.send(json.dumps({"command": "node_status", "data": {"code": "slurmctld_not_running", "message": "Cannot start Slurmctld, unknown error"}}))    
-
 async def update_slurm_config(data):
     logger.info("Updating Slurm configuration")
     slurm_conf_path = f"{SLURM_CONF_DIR}/slurm.conf"
@@ -131,20 +127,26 @@ async def restart_slurmd():
 
 async def update_node(data, websocket):
     global running_task
+    log_current_tasks()
 
-    node_name = os.popen("hostname").read().strip()
+    logger.info(f"Updating Slurm configuration for node: {POD_NODE_NAME}")
+
     await update_slurm_config(data["slurm_conf"])
+    await websocket.send(json.dumps({"command": "node_status", "data": {"code": "updating", "message": f"Node {POD_NODE_NAME} is updating"}}))
+    logger.info(f"Slurm configuration updated with data: {data['slurm_conf']}")
 
     if running_task is not None:
+        logger.info("Cancelling the previous running task.")
         running_task.cancel()
         try:
             await running_task
         except asyncio.CancelledError:
-            logger.info(f"Previous verify_and_restart_node task cancelled.")
+            logger.info("Previous verify_and_restart_node task cancelled.")
 
-    running_task = asyncio.create_task(verify_and_restart_node(node_name, websocket))
+    logger.info("Starting a new verify_and_restart_node task.")
+    running_task = asyncio.create_task(verify_and_restart_node(websocket))
 
-async def verify_and_restart_node(node_name, websocket):
+async def verify_and_restart_node(websocket):
 
     undesirable_states = [
         "DOWN", "FAIL", "NO_RESPOND", "POWER_DOWN", "UNKNOWN"
@@ -153,7 +155,7 @@ async def verify_and_restart_node(node_name, websocket):
     retries = 5
 
     for i in range(retries):
-        result = subprocess.run(["scontrol", "show", "node", node_name], capture_output=True)
+        result = subprocess.run(["scontrol", "show", "node", POD_NODE_NAME], capture_output=True)
         output = result.stdout.decode()
         errors = result.stderr.decode()
 
@@ -165,8 +167,8 @@ async def verify_and_restart_node(node_name, websocket):
             await asyncio.sleep(5)  # Wait before retrying
             continue
 
-        if f"Node {node_name} not found" in output:
-            logger.error(f"Node {node_name} not found, registering worker")
+        if f"Node {POD_NODE_NAME} not found" in output:
+            logger.error(f"Node {POD_NODE_NAME} not found, registering worker")
             await register_worker()
             return
 
@@ -177,35 +179,35 @@ async def verify_and_restart_node(node_name, websocket):
                 break
 
         if state == "IDLE":
-            logger.info(f"Node {node_name} is idle")
-            await websocket.send(json.dumps({"command": "node_status", "data": {"code": "idle", "message": f"Node {node_name} is idle"}}))
+            logger.info(f"Node {POD_NODE_NAME} is idle")
+            await websocket.send(json.dumps({"command": "node_status", "data": {"code": "idle", "message": f"Node {POD_NODE_NAME} is idle"}}))
             return  # Exit the function immediately
         elif state and state in undesirable_states:
-            logger.warning(f"Node {node_name} in undesirable state {state}, restarting slurmd")
+            logger.warning(f"Node {POD_NODE_NAME} in undesirable state {state}, restarting slurmd")
             status = await restart_slurmd()
             if status:
                 await asyncio.sleep(5)  # Wait for the service to restart
                 # Check the node status again after the restart
-                result = subprocess.run(["scontrol", "show", "node", node_name], capture_output=True)
+                result = subprocess.run(["scontrol", "show", "node", POD_NODE_NAME], capture_output=True)
                 output = result.stdout.decode()
                 for line in output.split('\n'):
                     if 'State=' in line:
                         state = line.split('State=')[1].split()[0].strip('*')
                         break
                 if state == "IDLE":
-                    logger.info(f"Node {node_name} is idle after restart")
-                    await websocket.send(json.dumps({"command": "node_status", "data": {"code": "idle", "message": f"Node {node_name} is idle"}}))
+                    logger.info(f"Node {POD_NODE_NAME} is idle after restart")
+                    await websocket.send(json.dumps({"command": "node_status", "data": {"code": "idle", "message": f"Node {POD_NODE_NAME} is idle"}}))
                     return  # Exit the function immediately
             else:
-                logger.error(f"Failed to restart slurmd for node {node_name}")
+                logger.error(f"Failed to restart slurmd for node {POD_NODE_NAME}")
         else:
-            logger.info(f"Node {node_name} is in state {state}, no restart needed")
-            await websocket.send(json.dumps({"command": "node_status", "data": {"code": state.lower(), "message": f"Node {node_name} is in state {state}"}}))
+            logger.info(f"Node {POD_NODE_NAME} is in state {state}, no restart needed")
+            await websocket.send(json.dumps({"command": "node_status", "data": {"code": state.lower(), "message": f"Node {POD_NODE_NAME} is in state {state}"}}))
             return  # Exit the function immediately
 
     else:
-        logger.error(f"Node {node_name} status is still unknown after retries")
-        await websocket.send(json.dumps({"command": "node_status", "data": {"code": "unknown", "message": f"Node {node_name} status is unknown after retries"}}))
+        logger.error(f"Node {POD_NODE_NAME} status is still unknown after retries")
+        await websocket.send(json.dumps({"command": "node_status", "data": {"code": "unknown", "message": f"Node {POD_NODE_NAME} status is unknown after retries"}}))
 
 def handle_scontrol_errors(errors):
     if "munge" in errors:
@@ -259,6 +261,12 @@ def status_service(service_name):
     except Exception as e:
         logger.error(f"Failed to check status of {service_name}: {e}")
         return False
+
+def log_current_tasks():
+    tasks = asyncio.all_tasks()
+    logger.info(f"Currently running tasks ({len(tasks)}):")
+    for task in tasks:
+        logger.info(f"Task: {task.get_name()}, Status: {task._state}, Coroutine: {task.get_coro()}")
     
 if __name__ == "__main__":
     logger.info("Starting worker client...")
