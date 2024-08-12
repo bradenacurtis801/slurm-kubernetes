@@ -80,8 +80,9 @@ class ConfigServer:
             websocket, "machine_info", machine_info
         )
 
-        self.client_sockets.get_client(websocket).set_name(data.get("hostname"))
-        await self.start_node(websocket)
+        self.client_sockets.get_client(websocket).set_name(data["machine_hostname"])
+        self.client_sockets.get_client(websocket).set_pod_name(data["pod_hostname"])
+
         await self.broadcast_update_nodes()
 
     async def register_worker(self, websocket: WebSocket, data: dict):
@@ -111,7 +112,6 @@ class ConfigServer:
         self.client_sockets.get_client(websocket).set_name(data["machine_hostname"])
         self.client_sockets.get_client(websocket).set_pod_name(data["pod_hostname"])
 
-        await self.start_node(websocket)
         await self.broadcast_update_nodes()
 
     async def start_node(self, websocket: WebSocket):
