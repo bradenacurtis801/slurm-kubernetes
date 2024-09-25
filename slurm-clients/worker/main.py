@@ -180,7 +180,7 @@ async def verify_and_restart_node(websocket):
 
         if state == "IDLE":
             logger.info(f"Node {POD_NODE_NAME} is idle")
-            await websocket.send(json.dumps({"command": "node_status", "data": {"code": "idle", "message": f"Node {POD_NODE_NAME} is idle"}}))
+            await websocket.send(json.dumps({"command": "node_status", "data": {"code": "idle", "message": f"{POD_NODE_NAME}:> slurm worker is idle"}}))
             return  # Exit the function immediately
         elif state and state in undesirable_states:
             logger.warning(f"Node {POD_NODE_NAME} in undesirable state {state}, restarting slurmd")
@@ -196,18 +196,18 @@ async def verify_and_restart_node(websocket):
                         break
                 if state == "IDLE":
                     logger.info(f"Node {POD_NODE_NAME} is idle after restart")
-                    await websocket.send(json.dumps({"command": "node_status", "data": {"code": "idle", "message": f"Node {POD_NODE_NAME} is idle"}}))
+                    await websocket.send(json.dumps({"command": "node_status", "data": {"code": "idle", "message": f"{POD_NODE_NAME}:> slurm worker is idle"}}))
                     return  # Exit the function immediately
             else:
                 logger.error(f"Failed to restart slurmd for node {POD_NODE_NAME}")
         else:
             logger.info(f"Node {POD_NODE_NAME} is in state {state}, no restart needed")
-            await websocket.send(json.dumps({"command": "node_status", "data": {"code": state.lower(), "message": f"Node {POD_NODE_NAME} is in state {state}"}}))
+            await websocket.send(json.dumps({"command": "node_status", "data": {"code": state.lower(), "message": f"{POD_NODE_NAME}:> slurm worker is in state {state}"}}))
             return  # Exit the function immediately
 
     else:
         logger.error(f"Node {POD_NODE_NAME} status is still unknown after retries")
-        await websocket.send(json.dumps({"command": "node_status", "data": {"code": "unknown", "message": f"Node {POD_NODE_NAME} status is unknown after retries"}}))
+        await websocket.send(json.dumps({"command": "node_status", "data": {"code": "unknown", "message": f"{POD_NODE_NAME}:> slurm worker status is unknown after retries"}}))
 
 def handle_scontrol_errors(errors):
     if "munge" in errors:

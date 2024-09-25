@@ -1,31 +1,34 @@
 # config/slurm_config.py
 
 import logging
+import os
+
+
 
 logger = logging.getLogger(__name__)
 
 class SlurmConfig:
-    def __init__(self, cluster_name="dev_cluster", slurmctld_host="localhost"):
-        self.cluster_name = cluster_name
-        self.slurmctld_host = slurmctld_host
-        self.proctrack_type = "proctrack/linuxproc"
-        self.prolog_flags = "Contain"
-        self.return_to_service = 1
-        self.slurmctld_pid_file = "/var/run/slurmctld.pid"
-        self.slurmd_pid_file = "/var/run/slurmd.pid"
-        self.slurmctld_port = 6817
-        self.slurmd_port = 6818
-        self.slurmd_spool_dir = "/var/spool/slurmd"
-        self.slurmd_user = "root"
-        self.state_save_location = "/var/spool/slurmctld"
-        self.task_plugin = "task/none"
-        self.auth_type = "auth/munge"
-        self.gres_types = "gpu"
-        self.partition_name = "debug"
-        self.partition_nodes = "ALL"
-        self.partition_default = "YES"
-        self.partition_max_time = "INFINITE"
-        self.partition_state = "UP"
+    def __init__(self):
+        self.cluster_name = os.getenv("SLURM_CLUSTER_NAME", "dev_cluster")
+        self.slurmctld_host = os.getenv("SLURMCTLD_HOST", "localhost")
+        self.proctrack_type = os.getenv("SLURM_PROCTRACK_TYPE", "proctrack/linuxproc")
+        self.prolog_flags = os.getenv("SLURM_PROLOG_FLAGS", "Contain")
+        self.return_to_service = int(os.getenv("SLURM_RETURN_TO_SERVICE", 1))
+        self.slurmctld_pid_file = os.getenv("SLURMCTLD_PID_FILE", "/var/run/slurmctld.pid")
+        self.slurmd_pid_file = os.getenv("SLURMD_PID_FILE", "/var/run/slurmd.pid")
+        self.slurmctld_port = int(os.getenv("SLURMCTLD_PORT", 6817))
+        self.slurmd_port = int(os.getenv("SLURMD_PORT", 6818))
+        self.slurmd_spool_dir = os.getenv("SLURMD_SPOOL_DIR", "/var/spool/slurmd")
+        self.slurmd_user = os.getenv("SLURMD_USER", "root")
+        self.state_save_location = os.getenv("SLURM_STATE_SAVE_LOCATION", "/var/spool/slurmctld")
+        self.task_plugin = os.getenv("SLURM_TASK_PLUGIN", "task/none")
+        self.auth_type = os.getenv("SLURM_AUTH_TYPE", "auth/munge")
+        self.gres_types = os.getenv("SLURM_GRES_TYPES", "gpu")
+        self.partition_name = os.getenv("SLURM_PARTITION_NAME", "debug")
+        self.partition_nodes = os.getenv("SLURM_PARTITION_NODES", "ALL")
+        self.partition_default = os.getenv("SLURM_PARTITION_DEFAULT", "YES")
+        self.partition_max_time = os.getenv("SLURM_PARTITION_MAX_TIME", "INFINITE")
+        self.partition_state = os.getenv("SLURM_PARTITION_STATE", "UP")
         self.nodes = []
 
     def add_node(

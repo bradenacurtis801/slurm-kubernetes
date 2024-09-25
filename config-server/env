@@ -1,0 +1,22 @@
+# .env file template for Slurm configuration
+
+SLURM_CLUSTER_NAME="" # The name of the Slurm cluster (Default: "dev_cluster")
+SLURMCTLD_HOST="" # The hostname or IP address of the Slurm controller daemon (slurmctld) (Default: "localhost")
+SLURM_PROCTRACK_TYPE="" # ProctrackType specifies the method Slurm uses to track job processes (Default: "proctrack/linuxproc")
+SLURM_PROLOG_FLAGS="" # PrologFlags control behavior of prolog scripts, e.g., 'Contain' to run jobs in containers (Default: "Contain")
+SLURM_RETURN_TO_SERVICE="" # Whether to return nodes to service automatically after failure (Default: 1) -- 1 = Yes, 0 = No
+SLURMCTLD_PID_FILE="" # File where the Slurm controller daemon (slurmctld) will store its PID (Default: "/var/run/slurmctld.pid")
+SLURMD_PID_FILE="" # File where the Slurm compute node daemon (slurmd) will store its PID (Default: "/var/run/slurmd.pid")
+SLURMCTLD_PORT="" # The port number Slurm controller daemon listens on (Default: 6817)
+SLURMD_PORT="" # The port number Slurm compute node daemon listens on (Default: 6818)
+SLURMD_SPOOL_DIR="" # Directory used by slurmd to store its state information (Default: "/var/spool/slurmd")
+SLURMD_USER="" # User that will run the Slurm compute node daemon (Default: "root")
+SLURM_STATE_SAVE_LOCATION="" # Directory where slurmctld saves state information (Default: "/var/spool/slurmctld")
+SLURM_TASK_PLUGIN="" # Task plugin type to handle task management (Default: "task/none")
+SLURM_AUTH_TYPE="" # Authentication type for Slurm, typically set to "auth/munge" for Munge-based authentication (Default: "auth/munge")
+SLURM_GRES_TYPES="" # Type of Generic Resource (GRES) available, e.g., GPU (Default: "gpu")
+SLURM_PARTITION_NAME="" # The name of the default partition where jobs are scheduled (Default: "debug")
+SLURM_PARTITION_NODES="" # Nodes assigned to the default partition (Default: "ALL")
+SLURM_PARTITION_DEFAULT="" # Whether this partition is the default one (Default: "YES")
+SLURM_PARTITION_MAX_TIME="" # Maximum time limit for jobs on the partition (Default: "INFINITE")
+SLURM_PARTITION_STATE="" # Current state of the partition (Default: "UP")
