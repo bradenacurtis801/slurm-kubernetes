@@ -35,6 +35,9 @@ logger = logging.getLogger(__name__)
 running_task = None
 
 async def register_worker():
+    """
+    Registers the worker node with the config server and starts receiving configuration updates.
+    """
     async with websockets.connect(CONFIG_SERVER_URL) as websocket:
         node_details = get_worker_details()
         data = {
@@ -50,6 +53,9 @@ async def register_worker():
         await receive_configs(websocket)
 
 def get_worker_details():
+    """
+    Retrieves the hardware details of the worker node, including CPU and GPU information.
+    """
     if USE_GPU == "true" and os.system("command -v nvidia-smi") == 0:
         logger.info("USE_GPU set to true, configuring GRES info...")
         POD_GPUS = int(os.popen("nvidia-smi --query-gpu=index --format=csv,noheader | wc -l").read().strip())
@@ -65,6 +71,9 @@ def get_worker_details():
     }
 
 async def receive_configs(websocket):
+    """
+    Listens for configuration updates and executes corresponding actions (e.g., update_node).
+    """
     while True:
         try:
             message = await websocket.recv()
@@ -87,6 +96,9 @@ async def receive_configs(websocket):
             await register_worker()
             
 async def update_slurm_config(data):
+    """
+    Writes new Slurm configuration data to the slurm.conf file.
+    """
     logger.info("Updating Slurm configuration")
     slurm_conf_path = f"{SLURM_CONF_DIR}/slurm.conf"
     with open(slurm_conf_path, "w") as f:
@@ -94,6 +106,9 @@ async def update_slurm_config(data):
     logger.info(f"Updated slurm.conf with: {data}")
 
 def generate_gres_conf():
+    """
+    Generates the gres.conf file for GPU resources when USE_GPU is set to true.
+    """
     gres_conf_path = os.path.join(SLURM_CONF_DIR, "gres.conf")
     
     # Initialize gres file
@@ -118,14 +133,24 @@ def generate_gres_conf():
         logger.info(gres_file.read())
 
 async def start_slurmd():
+    """
+    Starts the Slurmd service on the worker node. 
+    NOTE: restart_slurmd also will start the service if it doesn't exist. Probably just will just use restart_slurmd and remove this function.
+    """
     await start_service("slurmd")
     return status_service("slurmd")
 
 async def restart_slurmd():
+    """
+    Restarts the Slurmd service on the worker node.
+    """
     await restart_service("slurmd")
     return status_service("slurmd")
 
 async def update_node(data, websocket):
+    """
+    Updates the Slurm configuration for the worker node and restarts the Slurmd service.
+    """
     global running_task
     log_current_tasks()
 
@@ -138,10 +163,13 @@ async def update_node(data, websocket):
     await restart_slurmd()
 
     if running_task is not None:
+        # We cancel the previous task to ensure that there aren't multiple async instances of verify_and_restart_node
+        # running at the same time. Multiple instances could unnecessarily restart the slurmd service multiple times,
+        # which can delay the node's readiness by prolonging the restart process.
         logger.info("Cancelling the previous running task.")
-        running_task.cancel()
+        running_task.cancel() # Cancel the currently running task, if any
         try:
-            await running_task
+            await running_task # Wait for the task to complete its cancellation cleanly
         except asyncio.CancelledError:
             logger.info("Previous verify_and_restart_node task cancelled.")
 
@@ -149,7 +177,9 @@ async def update_node(data, websocket):
     running_task = asyncio.create_task(verify_and_restart_node(websocket))
 
 async def verify_and_restart_node(websocket):
-
+    """
+    Verifies the state of the node and restarts the Slurmd service if the node is in an undesirable state.
+    """
     undesirable_states = [
         "DOWN", "FAIL", "NO_RESPOND", "POWER_DOWN", "UNKNOWN"
     ]
@@ -163,27 +193,33 @@ async def verify_and_restart_node(websocket):
 
         logger.debug(f"Retry number: {i}\n\n output:\n {output} \n\n errors:\n {errors}")
 
+        # Check for errors in the scontrol output
         if "slurm_load_node error" in errors:
             logger.error(f"scontrol show node error: {errors}")
             handle_scontrol_errors(errors)
             await asyncio.sleep(5)  # Wait before retrying
             continue
 
+        # If the node is not found, re-register the worker
         if f"Node {POD_NODE_NAME} not found" in output:
             logger.error(f"Node {POD_NODE_NAME} not found, registering worker")
             await register_worker()
             return
 
+        # Parse the state of the node from the scontrol output
         state = None
         for line in output.split('\n'):
             if 'State=' in line:
                 state = line.split('State=')[1].split()[0].strip('*')
                 break
 
+        # If the node is idle, notify the config server
         if state == "IDLE":
             logger.info(f"Node {POD_NODE_NAME} is idle")
             await websocket.send(json.dumps({"command": "node_status", "data": {"code": "idle", "message": f"{POD_NODE_NAME}:> slurm worker is idle"}}))
             return  # Exit the function immediately
+        
+        # If the node is in an undesirable state, restart Slurmd
         elif state and state in undesirable_states:
             logger.warning(f"Node {POD_NODE_NAME} in undesirable state {state}, restarting slurmd")
             status = await restart_slurmd()
@@ -202,16 +238,23 @@ async def verify_and_restart_node(websocket):
                     return  # Exit the function immediately
             else:
                 logger.error(f"Failed to restart slurmd for node {POD_NODE_NAME}")
+
+        # If the node is in a valid state other than idle, notify the config server
         else:
             logger.info(f"Node {POD_NODE_NAME} is in state {state}, no restart needed")
             await websocket.send(json.dumps({"command": "node_status", "data": {"code": state.lower(), "message": f"{POD_NODE_NAME}:> slurm worker is in state {state}"}}))
             return  # Exit the function immediately
 
+    # If retries are exhausted and the node is still in an unknown state, notify the config server
     else:
         logger.error(f"Node {POD_NODE_NAME} status is still unknown after retries")
         await websocket.send(json.dumps({"command": "node_status", "data": {"code": "unknown", "message": f"{POD_NODE_NAME}:> slurm worker status is unknown after retries"}}))
 
+# Function to handle specific errors in scontrol command output
 def handle_scontrol_errors(errors):
+    """
+    Handles errors returned by the scontrol command, such as authentication issues or munge errors.
+    """
     if "munge" in errors:
         if not status_service('munge'):
             logger.error("Munge error, Munge is not running. ensure munge is running and then restart slurm.")
@@ -219,7 +262,11 @@ def handle_scontrol_errors(errors):
         logger.error("Authentication error, verify Munge credentials and configuration")
     # Add any other specific error handling as needed
 
+# Function to start a system service using the service command
 async def start_service(service_name, *args):
+    """
+    Starts the specified service using the system's service manager.
+    """
     stdout_log = os.path.join(LOG_DIR, f"{service_name}_stdout.log")
     stderr_log = os.path.join(LOG_DIR, f"{service_name}_stderr.log")
     logger.info(f"Starting {service_name} service...")
@@ -230,12 +277,16 @@ async def start_service(service_name, *args):
                 stdout=out,
                 stderr=err
             )
-            await process.communicate()
+            await process.communicate() # Wait for the service to start
         logger.info(f"{service_name} service started, logs: {stdout_log}, {stderr_log}")
     except Exception as e:
         logger.error(f"Failed to start {service_name}: {e}")
 
+# Function to restart a system service using the service command
 async def restart_service(service_name):
+    """
+    Restarts the specified service using the system's service manager.
+    """
     stdout_log = os.path.join(LOG_DIR, f"{service_name}_stdout.log")
     stderr_log = os.path.join(LOG_DIR, f"{service_name}_stderr.log")
     logger.info(f"Restarting {service_name} service...")
@@ -246,12 +297,16 @@ async def restart_service(service_name):
                 stdout=out,
                 stderr=err
             )
-            await process.communicate()
+            await process.communicate() # Wait for the service to restart
         logger.info(f"{service_name} service restarted, logs: {stdout_log}, {stderr_log}")
     except Exception as e:
         logger.error(f"Failed to restart {service_name}: {e}")
-        
+
+# Function to check the status of a system service      
 def status_service(service_name):
+    """
+    Checks if the specified service is running by invoking the service status command.
+    """
     try:
         result = subprocess.run(["service", service_name, "status"], capture_output=True)
         if "is running" in result.stdout.decode():
@@ -264,12 +319,17 @@ def status_service(service_name):
         logger.error(f"Failed to check status of {service_name}: {e}")
         return False
 
+# Function to log all currently running asyncio tasks
 def log_current_tasks():
+    """
+    Logs all currently running asyncio tasks for debugging purposes.
+    """
     tasks = asyncio.all_tasks()
     logger.info(f"Currently running tasks ({len(tasks)}):")
     for task in tasks:
         logger.info(f"Task: {task.get_name()}, Status: {task._state}, Coroutine: {task.get_coro()}")
-    
+
+# Entry point of the script   
 if __name__ == "__main__":
     logger.info("Starting worker client...")
     asyncio.run(register_worker())
