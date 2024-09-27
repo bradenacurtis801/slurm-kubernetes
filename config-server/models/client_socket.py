@@ -1,6 +1,9 @@
 # models/client_socket.py
 
 from fastapi import WebSocket
+import logging
+
+logger = logging.getLogger(__name__)
 
 class ClientSocket:
     def __init__(self, websocket: WebSocket):
@@ -47,6 +50,9 @@ class ClientSockets:
     def remove_client(self, websocket: WebSocket):
         if websocket in self.clients:
             del self.clients[websocket]
+            logger.info(f"Client {websocket.client.host} removed successfully.")
+        else:
+            logger.error(f"Client {websocket.client.host} not found in the client list.")
 
     def get_clients(self):
         return self.clients
