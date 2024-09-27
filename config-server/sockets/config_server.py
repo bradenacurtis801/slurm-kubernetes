@@ -27,6 +27,7 @@ class ConfigServer:
         logging.info(f"Client connected: {websocket.client.host}")
 
     async def on_disconnect(self, websocket: WebSocket):
+        await websocket.close()  # Ensure the WebSocket connection is fully closed
         logging.info(f"Client disconnected: {websocket.client.host}")
         client_socket = self.client_sockets.get_client(websocket)
         pod_name = client_socket.get_pod_name()
@@ -36,6 +37,7 @@ class ConfigServer:
             await self.broadcast_update_nodes()
         logger.info(f"Removing client socket: {websocket}")
         self.client_sockets.remove_client(websocket)
+        logging.info(f"Client list: {self.client_sockets.get_clients()}")
 
     async def handle_message(self, websocket: WebSocket, message: str):
         try:
@@ -124,21 +126,21 @@ class ConfigServer:
         await websocket.send_text(json.dumps(message))
 
     async def broadcast_update_nodes(self):
-        logger.info("Broadcasting update nodes")
         slurm_conf = self.slurm_config.generate_conf()
+        logger.info("Broadcasting update nodes: \n\n{}".format(slurm_conf))
         for websocket in self.client_sockets.get_clients().keys():
             try:
                 data = {
                     "command": "update_node",
-                    "data": {
-                        "slurm_conf": slurm_conf,
-                    },
+                    "data": {"slurm_conf": slurm_conf},
                 }
                 await websocket.send_text(json.dumps(data))
-                logger.info(f"updated node: {websocket.client.host}")
+                logger.info(f"Updated node: {websocket.client.host}")
             except Exception as e:
-                logging.error(f"Failed to notify client: {e}")
-
+                logger.error(f"Failed to notify client: {websocket.client.host} due to error: {e}")
+                # Remove the client that caused the error, as it's no longer connected
+                self.client_sockets.remove_client(websocket)
+                logger.info(f"Removed WebSocket {websocket.client.host} from client list.")
 
 config_server = ConfigServer()
 
