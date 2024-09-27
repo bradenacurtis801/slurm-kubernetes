@@ -128,7 +128,9 @@ class ConfigServer:
     async def broadcast_update_nodes(self):
         slurm_conf = self.slurm_config.generate_conf()
         logger.info("Broadcasting update nodes: \n\n{}".format(slurm_conf))
-        for websocket in self.client_sockets.get_clients().keys():
+
+        # Create a list of WebSocket keys to avoid modifying the dictionary while iterating
+        for websocket in list(self.client_sockets.get_clients().keys()):
             try:
                 data = {
                     "command": "update_node",
