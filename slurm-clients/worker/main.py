@@ -52,7 +52,7 @@ async def register_worker():
 def get_worker_details():
     if USE_GPU == "true" and os.system("command -v nvidia-smi") == 0:
         logger.info("USE_GPU set to true, configuring GRES info...")
-        GPUS = int(os.popen("nvidia-smi --query-gpu=index --format=csv,noheader | wc -l").read().strip())
+        POD_GPUS = int(os.popen("nvidia-smi --query-gpu=index --format=csv,noheader | wc -l").read().strip())
         generate_gres_conf()
     return {
         "pod_hostname": POD_NODE_NAME,
@@ -134,6 +134,8 @@ async def update_node(data, websocket):
     await update_slurm_config(data["slurm_conf"])
     await websocket.send(json.dumps({"command": "node_status", "data": {"code": "updating", "message": f"Node {POD_NODE_NAME} is updating"}}))
     logger.info(f"Slurm configuration updated with data: {data['slurm_conf']}")
+
+    await restart_slurmd()
 
     if running_task is not None:
         logger.info("Cancelling the previous running task.")
