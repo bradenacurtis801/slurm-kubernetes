@@ -147,6 +147,16 @@ async def restart_slurmd():
     await restart_service("slurmd")
     return status_service("slurmd")
 
+# Function to log all currently running asyncio tasks
+def log_current_tasks():
+    """
+    Logs all currently running asyncio tasks for debugging purposes.
+    """
+    tasks = asyncio.all_tasks()
+    logger.info(f"Currently running tasks ({len(tasks)}):")
+    for task in tasks:
+        logger.info(f"Task: {task.get_name()}, Status: {task._state}, Coroutine: {task.get_coro()}")
+
 async def update_node(data, websocket):
     """
     Updates the Slurm configuration for the worker node and restarts the Slurmd service.
@@ -318,16 +328,6 @@ def status_service(service_name):
     except Exception as e:
         logger.error(f"Failed to check status of {service_name}: {e}")
         return False
-
-# Function to log all currently running asyncio tasks
-def log_current_tasks():
-    """
-    Logs all currently running asyncio tasks for debugging purposes.
-    """
-    tasks = asyncio.all_tasks()
-    logger.info(f"Currently running tasks ({len(tasks)}):")
-    for task in tasks:
-        logger.info(f"Task: {task.get_name()}, Status: {task._state}, Coroutine: {task.get_coro()}")
 
 # Entry point of the script   
 if __name__ == "__main__":

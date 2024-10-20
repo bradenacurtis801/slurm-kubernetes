@@ -69,6 +69,12 @@ async def receive_configs(websocket):
             logger.error(f"Unexpected error: {e}")
             continue
 
+def log_current_tasks():
+    tasks = asyncio.all_tasks()
+    logger.info(f"Currently running tasks ({len(tasks)}):")
+    for task in tasks:
+        logger.info(f"Task: {task.get_name()}, Status: {task._state}, Coroutine: {task.get_coro()}")
+
 async def update_node(data, websocket):
     global running_task
     log_current_tasks()
@@ -162,12 +168,6 @@ def status_service(service_name):
     except Exception as e:
         logger.error(f"Failed to check status of {service_name}: {e}")
         return False
-    
-def log_current_tasks():
-    tasks = asyncio.all_tasks()
-    logger.info(f"Currently running tasks ({len(tasks)}):")
-    for task in tasks:
-        logger.info(f"Task: {task.get_name()}, Status: {task._state}, Coroutine: {task.get_coro()}")
     
 if __name__ == "__main__":
     logger.info("Starting master client...")
