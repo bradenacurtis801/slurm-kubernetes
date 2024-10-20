@@ -1,4 +1,4 @@
-# .env file template for Slurm configuration
+# slurm.conf configurations:
 
 SLURM_CLUSTER_NAME="" # The name of the Slurm cluster (Default: "dev_cluster")
 SLURMCTLD_HOST="" # The hostname or IP address of the Slurm controller daemon (slurmctld) (Default: "localhost")
@@ -20,3 +20,7 @@ SLURM_PARTITION_NODES="" # Nodes assigned to the default partition (Default: "AL
 SLURM_PARTITION_DEFAULT="" # Whether this partition is the default one (Default: "YES")
 SLURM_PARTITION_MAX_TIME="" # Maximum time limit for jobs on the partition (Default: "INFINITE")
 SLURM_PARTITION_STATE="" # Current state of the partition (Default: "UP")
+
+### Server config:
+
+CONFIG_SERVER_PORT=<int> # Set port you want server to run on (default value is 3000).
