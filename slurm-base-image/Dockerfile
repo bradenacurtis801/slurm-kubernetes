@@ -11,7 +11,6 @@ ENV TZ=Etc/UTC
 ENV SM_ARCH=sm_86
 ENV COMPUTE_CAP=compute_86
 
-# Install necessary packages and dependencies
 RUN apt-get update && \
     apt-get install -y \
     zlib1g \
@@ -70,7 +69,6 @@ RUN wget https://download.open-mpi.org/release/open-mpi/v5.0/openmpi-${VERSION}.
     ldconfig && \
     rm -rf openmpi-${VERSION} openmpi-${VERSION}.tar.gz
 
-# Add a user to manage everything, and be able to ssh (will be handy everywhere)
 RUN useradd -m admin -s /bin/bash -d /home/admin && \
     echo "admin:admin" | chpasswd && \
     adduser admin sudo && \
@@ -82,3 +80,4 @@ RUN echo 'OPTIONS="--force --key-file /etc/munge/munge.key"' > /etc/default/mung
 # Set environment variables for CUDA, NCCL, and OpenMPI
 ENV PATH="/usr/local/cuda/bin:/usr/local/bin:${PATH}"
 ENV LD_LIBRARY_PATH="/usr/local/cuda/lib64:/usr/local/lib:${LD_LIBRARY_PATH}"
+
