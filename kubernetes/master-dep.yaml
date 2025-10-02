@@ -57,7 +57,7 @@ spec:
         - name: SLURM_ROLE
           value: master
         - name: CONFIG_SERVER_URL
-          value: <ip/fqdn address of config server>:3000/ws/notify"
+          value: "ws://config-server-svc.test-slurm.svc.cluster.local:3000/ws/notify"
         - name: NODE_NAME
           valueFrom:
             fieldRef:
@@ -83,4 +83,5 @@ spec:
 
 
 # master-client-0.master-client-svc.test-slurm.svc.cluster.local
+
 
